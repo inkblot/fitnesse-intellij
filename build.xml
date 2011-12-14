@@ -1,0 +1,334 @@
+<project name="fitnesse-intellij" default="dist" xmlns:ivy="antlib:org.apache.ivy.ant">
+    <dirname property="build.common" file="${ant.file.fitnesse-intellij}"/>
+
+    <property environment="env"/>
+
+    <property name="namespace" value="${ant.project.name}"/>
+    <property name="src" location="${basedir}/src"/>
+    <property name="src.resources" location="${basedir}/resources"/>
+    <property name="test" location="${basedir}/test"/>
+    <property name="build" location="${basedir}/build"/>
+    <property name="build.dist" location="${build}/dist"/>
+    <property name="build.classes" location="${build}/classes"/>
+    <property name="build.test" location="${build}/test"/>
+    <property name="test.classes" location="${build.test}/classes"/>
+    <property name="test.resources" location="${basedir}/test-resources"/>
+    <property name="test.results" location="${build.test}/results"/>
+    <property name="coverage" location="${build}/coverage"/>
+    <property name="coverage.classes" location="${coverage}/classes"/>
+    <property name="reports" location="${build}/reports"/>
+    <property name="reports.test" location="${reports}/test"/>
+    <property name="reports.coverage" location="${reports}/coverage"/>
+    <property name="reports.ivy" location="${reports}/ivy"/>
+    <property name="lib" location="${basedir}/lib"/>
+    <property name="lib.compile" location="${lib}/compile"/>
+    <property name="lib.runtime" location="${lib}/runtime"/>
+    <property name="lib.test" location="${lib}/test"/>
+    <property name="lib.build" location="${lib}/build"/>
+
+    <property name="ivy.version" value="2.0.0"/>
+    <property name="ivy.lib" location="${basedir}/ivy-lib"/>
+    <property name="ivy.jar.file" location="${ivy.lib}/ivy-${ivy.version}.jar"/>
+    <condition property="download-ivy.once">
+        <available file="${ivy.jar.file}"/>
+    </condition>
+
+    <condition property="use.test" value="Yes, do it!">
+        <available file="${test}"/>
+    </condition>
+
+    <condition property="use.ivy" value="Yes, do it!">
+        <available file="${basedir}/ivy.xml"/>
+    </condition>
+
+    <condition property="CATALINA_HOME" value="${env.CATALINA_HOME}">
+        <isset property="env.CATALINA_HOME"/>
+    </condition>
+    <condition property="use.deploy">
+        <and>
+            <isset property="make.war"/>
+            <isset property="CATALINA_HOME"/>
+        </and>
+    </condition>
+    <condition property="deploy.webapps" value="${CATALINA_HOME}/webapps">
+        <and>
+            <isset property="make.war"/>
+            <isset property="CATALINA_HOME"/>
+        </and>
+    </condition>
+
+    <path id="lib.compile.path">
+        <fileset dir="${lib.compile}" includes="*.jar"/>
+    </path>
+
+    <path id="lib.runtime.path">
+        <fileset dir="${lib.runtime}" includes="*.jar"/>
+    </path>
+
+    <path id="lib.test.path">
+        <fileset dir="${lib.test}" includes="*.jar"/>
+    </path>
+
+    <path id="lib.build.path">
+        <fileset dir="${lib.build}" includes="*.jar"/>
+    </path>
+
+    <target name="clean-artifacts">
+        <delete dir="${build}"/>
+    </target>
+
+    <target name="clean" depends="clean-artifacts" description="Remove all generated files and directory">
+        <delete dir="${lib}"/>
+    </target>
+
+    <target name="download-ivy" unless="download-ivy.once">
+        <mkdir dir="${ivy.lib}"/>
+        <get
+                src="http://repo1.maven.org/maven2/org/apache/ivy/ivy/${ivy.version}/ivy-${ivy.version}.jar"
+                dest="${ivy.jar.file}" usetimestamp="true" verbose="true"/>
+
+        <get src="http://ftp.us.xemacs.org/pub/mirrors/maven2/com/jcraft/jsch/0.1.38/jsch-0.1.38.jar"
+             dest="${ivy.lib}/jsch-0.1.38.jar" usetimestamp="true" verbose="true"/>
+    </target>
+
+    <target name="init-ivy" depends="download-ivy" unless="init-ivy.once">
+        <path id="ivy.lib.path">
+            <fileset dir="${ivy.lib}" includes="*.jar"/>
+        </path>
+        <taskdef resource="org/apache/ivy/ant/antlib.xml"
+                 uri="antlib:org.apache.ivy.ant" classpathref="ivy.lib.path"/>
+        <ivy:settings file="${build.common}/ivy-settings.xml"/>
+        <property name="init-ivy.once" value="yes"/>
+    </target>
+
+    <target name="resolve" depends="init-ivy" if="use.ivy" description="Resolve dependencies">
+        <ivy:resolve/>
+        <echo message="Resolved: ${ivy.resolved.configurations}"/>
+        <ivy:retrieve pattern="${lib}/[conf]/[artifact]-[revision].[ext]"/>
+    </target>
+
+    <target name="init-properties">
+        <tstamp>
+            <format property="time.init" pattern="yyyy-MM-dd HH:mm:ss"/>
+        </tstamp>
+        <condition property="use.antcontrib" value="Yes, do it!">
+            <available resource="net/sf/antcontrib/antcontrib.properties" classpathref="lib.build.path"/>
+        </condition>
+        <condition property="use.junit" value="Yes, do it!">
+            <and>
+                <isset property="use.test"/>
+                <available classname="junit.framework.TestCase" classpathref="lib.test.path"/>
+            </and>
+        </condition>
+        <condition property="use.cobertura" value="Yes, do it!">
+            <and>
+                <or>
+                    <isset property="use.test"/>
+                </or>
+                <available resource="net/sourceforge/cobertura/ant/antlib.xml" classpathref="lib.build.path"/>
+            </and>
+        </condition>
+    </target>
+
+    <target name="init-directories">
+        <mkdir dir="${lib.runtime}"/>
+        <mkdir dir="${lib.compile}"/>
+        <mkdir dir="${lib.test}"/>
+        <mkdir dir="${lib.build}"/>
+        <mkdir dir="${build.classes}"/>
+        <mkdir dir="${build.dist}"/>
+        <mkdir dir="${test.classes}"/>
+        <mkdir dir="${test.results}"/>
+        <mkdir dir="${reports.test}"/>
+        <mkdir dir="${reports.ivy}"/>
+        <mkdir dir="${reports.coverage}"/>
+        <mkdir dir="${coverage.classes}"/>
+    </target>
+
+    <target name="init-antcontrib" if="use.antcontrib">
+        <taskdef resource="net/sf/antcontrib/antcontrib.properties" classpathref="lib.build.path"/>
+
+        <propertyregex property="namespace.path" input="${namespace}" defaultValue="${namespace}" regexp="\." replace="/" global="true"/>
+        <property name="updates.zip" value="${namespace.path}/updates.zip"/>
+    </target>
+
+    <target name="init-cobertura" if="use.cobertura">
+        <taskdef resource="tasks.properties" classpathref="lib.build.path"/>
+    </target>
+
+    <target name="init-javac2">
+        <taskdef name="javac2" classname="com.intellij.ant.Javac2" classpath="lib.build.path"/>
+    </target>
+
+    <target name="init-tasks" depends="init-antcontrib,init-cobertura,init-javac2"/>
+
+    <target name="init" depends="resolve,init-directories,init-properties,init-tasks"/>
+
+    <target name="compile" depends="init">
+        <javac2 destdir="${build.classes}" srcdir="${src}" includeantruntime="false">
+            <classpath refid="lib.compile.path"/>
+            <classpath refid="lib.runtime.path"/>
+        </javac2>
+    </target>
+
+    <target name="instrument" depends="compile" if="use.cobertura">
+        <cobertura-instrument todir="${coverage.classes}" datafile="${coverage}/cobertura.ser">
+            <fileset dir="${build.classes}" includes="**/*.class"/>
+        </cobertura-instrument>
+        <property name="instrumented" value="sure"/>
+    </target>
+
+    <target name="test-compile" depends="compile" if="use.test">
+        <javac destdir="${test.classes}" srcdir="${test}" includes="**" debug="true" target="1.5" includeantruntime="false">
+            <classpath location="${build.classes}"/>
+            <classpath refid="lib.compile.path"/>
+            <classpath refid="lib.runtime.path"/>
+            <classpath refid="lib.test.path"/>
+        </javac>
+    </target>
+
+    <target name="test" depends="instrument,test-compile" if="use.junit" description="Run unit tests">
+        <junit fork="true" dir="${basedir}" failureproperty="test.failed" printsummary="yes">
+            <jvmarg value="-Dnet.sourceforge.cobertura.datafile=${coverage}/cobertura.ser"/>
+            <classpath location="${coverage.classes}"/>
+            <classpath location="${build.classes}"/>
+            <classpath location="${test.classes}"/>
+            <classpath location="${test.resources}"/>
+            <classpath location="${src.resources}"/>
+            <classpath refid="lib.compile.path"/>
+            <classpath refid="lib.runtime.path"/>
+            <classpath refid="lib.test.path"/>
+            <classpath refid="lib.build.path"/>
+            <formatter type="xml"/>
+            <batchtest todir="${test.results}">
+                <fileset dir="${test}" includes="**/*Test.java"/>
+            </batchtest>
+        </junit>
+        <property name="tested" value="sure"/>
+    </target>
+
+    <target name="jar" depends="compile">
+        <jar destfile="${build.dist}/${ant.project.name}.jar">
+            <fileset dir="${build.classes}">
+                <include name="**"/>
+                <exclude name="**/client/**"/>
+            </fileset>
+            <fileset dir="${src.resources}">
+                <include name="**"/>
+            </fileset>
+            <fileset dir="${build.dist}">
+                <include name="${updates.zip}"/>
+            </fileset>
+        </jar>
+    </target>
+
+    <target name="source-jar">
+        <jar destfile="${build.dist}/${ant.project.name}-source.jar">
+            <fileset dir="${src}">
+                <include name="**"/>
+            </fileset>
+            <fileset dir="${basedir}">
+                <include name="LICENSE"/>
+            </fileset>
+        </jar>
+    </target>
+
+    <target name="build-properties" depends="init" if="use.antcontrib">
+        <condition property="build.number" value="${env.BUILD_NUMBER}">
+            <isset property="env.BUILD_NUMBER"/>
+        </condition>
+        <property name="build.number" value="SNAPSHOT"/>
+        <property name="dist.path" value="${ivy.organization}/${ivy.module}"/>
+        <property name="dist.revision" value="${ivy.revision}"/>
+        <mkdir dir="${build.classes}/${namespace.path}"/>
+        <propertyfile file="${build.classes}/${namespace.path}/build.properties">
+            <entry key="build.path" value="${dist.path}"/>
+            <entry key="build.rev" value="${dist.revision}"/>
+            <entry key="build.user" value="${user.name}"/>
+            <entry key="build.date" value="${time.init}"/>
+            <entry key="build.number" value="${build.number}"/>
+        </propertyfile>
+    </target>
+
+    <target name="src-zip" depends="resolve">
+        <zip destfile="${build.dist}/${ant.project.name}-src.zip" >
+            <zipfileset prefix="${ant.project.name}-${ivy.revision}" dir="${basedir}">
+                <include name="src/**"/>
+                <include name="resources/**"/>
+                <include name="test/**"/>
+                <include name="test-resources/**"/>
+                <include name="web/**"/>
+                <include name="LICENSE"/>
+                <include name="build.xml"/>
+                <include name="ivy.xml"/>
+                <include name="build-common/build-common.xml"/>
+                <include name="build-common/build-ivy.xml"/>
+                <include name="build-common/ivy-settings.xml"/>
+            </zipfileset>
+        </zip>
+    </target>
+
+    <target name="src-targz" depends="resolve">
+        <tar destfile="${build.dist}/${ant.project.name}-src.tar.gz" compression="gzip">
+            <tarfileset prefix="${ant.project.name}-${ivy.revision}" dir="${basedir}">
+                <include name="src/**"/>
+                <include name="resources/**"/>
+                <include name="test/**"/>
+                <include name="test-resources/**"/>
+                <include name="web/**"/>
+                <include name="LICENSE"/>
+                <include name="build.xml"/>
+                <include name="ivy.xml"/>
+                <include name="build-common/build-common.xml"/>
+                <include name="build-common/build-ivy.xml"/>
+                <include name="build-common/ivy-settings.xml"/>
+            </tarfileset>
+        </tar>
+    </target>
+
+    <target name="artifacts" depends="jar,source-jar,src-zip,src-targz"/>
+
+    <target name="test-report" if="tested">
+        <junitreport todir="${reports.test}">
+            <fileset dir="${test.results}">
+                <include name="**/TEST-*.xml"/>
+            </fileset>
+            <report todir="${reports.test}"/>
+        </junitreport>
+    </target>
+
+    <target name="coverage-report" if="use.cobertura">
+        <cobertura-report format="xml" destdir="${reports.coverage}" srcdir="${src}"
+                          datafile="${coverage}/cobertura.ser"/>
+        <cobertura-report format="html" destdir="${reports.coverage}" srcdir="${src}"
+                          datafile="${coverage}/cobertura.ser"/>
+    </target>
+
+    <target name="resolve-report" depends="resolve" if="use.ivy" description="Generate Ivy resolution report">
+        <ivy:report todir="${reports.ivy}"/>
+    </target>
+
+    <target name="report" depends="test-report,coverage-report,resolve-report"/>
+
+    <target name="dist" depends="clean,artifacts,test,report" description="Create distribution artifacts">
+        <fail if="test.failed" message="Tests failed"/>
+    </target>
+
+    <target name="publish-local" depends="dist" if="use.ivy" description="Publish artifacts to local repository">
+        <ivy:publish resolver="local" overwrite="true">
+            <artifacts pattern="${build.dist}/[artifact].[ext]"/>
+        </ivy:publish>
+    </target>
+
+    <target name="publish-public" depends="dist" if="use.ivy">
+        <ivy:publish resolver="dorothy-public" overwrite="true">
+            <artifacts pattern="${build.dist}/[artifact].[ext]"/>
+        </ivy:publish>
+    </target>
+
+    <target name="publish-private" depends="dist" if="use.ivy">
+        <ivy:publish resolver="dorothy-private" overwrite="true">
+            <artifacts pattern="${build.dist}/[artifact].[ext]"/>
+        </ivy:publish>
+    </target>
+</project>
