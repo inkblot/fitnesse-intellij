@@ -157,7 +157,7 @@
     </target>
 
     <target name="init-javac2">
-        <taskdef name="javac2" classname="com.intellij.ant.Javac2" classpath="lib.build.path"/>
+        <taskdef name="javac2" classname="com.intellij.ant.Javac2" classpathref="lib.build.path"/>
     </target>
 
     <target name="init-tasks" depends="init-antcontrib,init-cobertura,init-javac2"/>
